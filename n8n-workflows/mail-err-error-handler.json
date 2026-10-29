@@ -1,0 +1,138 @@
+{
+  "name": "MAIL-ERR Global Error Handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "ec40cf55-f690-4792-b309-3b0a745cbb20",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const errorData = $input.item.json;\nconst execution = errorData.execution || {};\nconst workflow = errorData.workflow || {};\nconst error = errorData.execution?.error || {};\n\nreturn {\n  json: {\n    workflow_id: workflow.id || 'mail-triage',\n    workflow_name: workflow.name || 'MAIL-01 Email Triage & Draft Pipeline',\n    node_name: error.node?.name || 'Unknown Node',\n    error_message: error.message || 'Unknown runtime error',\n    execution_id: execution.id || '',\n    occurred_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "5aa37beb-5274-4fd4-b18d-b628d1fcd18d",
+      "name": "Format Error Incident",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.resend.com/emails",
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.RESEND_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"from\": \"{{ $env.SYSTEM_SENDER_EMAIL }}\",\n  \"to\": [\"{{ $env.ADMIN_NOTIFICATION_EMAIL }}\"],\n  \"subject\": \"[CRITICAL ALERT] Email Triage Automation Error in \" + $json.node_name,\n  \"html\": \"<h3>Email Pipeline Execution Error</h3><p><strong>Workflow:</strong> \" + $json.workflow_name + \"</p><p><strong>Node:</strong> \" + $json.node_name + \"</p><p><strong>Error:</strong> \" + $json.error_message + \"</p><p><strong>Execution ID:</strong> \" + $json.execution_id + \"</p><p><strong>Timestamp:</strong> \" + $json.occurred_at + \"</p>\"\n}"
+      },
+      "id": "3c4d1f65-32c4-44dc-af11-b18fc36e432b",
+      "name": "Send Admin Alert Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        720,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.LINK_TO_YOUR_SUPABASE_URL }}/rest/v1/email_processing_logs",
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.SUPABASE_SERVICE_ROLE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"message_id\": \"err_\" + $json.execution_id,\n  \"category\": \"error\",\n  \"status\": \"failed\",\n  \"error_message\": $json.node_name + \": \" + $json.error_message,\n  \"pre_filtered\": False,\n  \"draft_created\": False\n}"
+      },
+      "id": "247604c9-ecec-46d0-9e73-e2b1a62f3875",
+      "name": "Log Failure to Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        720,
+        380
+      ]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error Incident",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Incident": {
+      "main": [
+        [
+          {
+            "node": "Send Admin Alert Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Failure to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "43f354fc-d8d9-4a9f-9a8b-340ea17acbeb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "automation-suite"
+  },
+  "id": "39e2b7e1",
+  "tags": []
+}
